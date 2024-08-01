@@ -1,0 +1,6 @@
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - r-base=4.3
+  - bioconductor-summarizedexperiment=1.32.0
