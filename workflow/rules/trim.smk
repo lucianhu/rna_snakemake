@@ -1,55 +1,37 @@
-rule get_sra:
-    output:
-        "sra/{accession}_1.fastq",
-        "sra/{accession}_2.fastq",
-    log:
-        "logs/get-sra/{accession}.log",
-    wrapper:
-        "v3.5.3/bio/sra-tools/fasterq-dump"
-
-
-rule cutadapt_pipe:
+rule trim_galore_process:
     input:
-        get_cutadapt_pipe_input,
+        get_cutadapt_input
     output:
-        pipe("pipe/cutadapt/{sample}/{unit}.{fq}.{ext}"),
-    log:
-        "logs/pipe-fastqs/catadapt/{sample}_{unit}.{fq}.{ext}.log",
-    wildcard_constraints:
-        ext=r"fastq|fastq\.gz",
-    threads: 0
+        fastq1="results/trimmed/{sample}_{unit}_R1_val_1.fq.gz",
+        fastq2="results/trimmed/{sample}_{unit}_R2_val_2.fq.gz",
+        html="results/trimmed/{sample}_fastqc.html",
+        zip="results/trimmed/{sample}_fastqc.zip",
+        versions="results/trimmed/{sample}_versions.yml"
+    conda:
+        "envs/trimgalore.yaml"
+    threads:
+        8
     shell:
-        "cat {input} > {output} 2> {log}"
+        """
+        prefix={wildcards.sample}_{wildcards.unit}
+        ln -s {input[0]} {prefix}_1.fastq.gz
+        ln -s {input[1]} {prefix}_2.fastq.gz
 
+        trim_galore \\
+            --cores {threads} \\
+            --paired \\
+            --gzip \\
+            {prefix}_1.fastq.gz \\
+            {prefix}_2.fastq.gz
 
-rule cutadapt_pe:
-    input:
-        get_cutadapt_input,
-    output:
-        fastq1="results/trimmed/{sample}_{unit}_R1.fastq.gz",
-        fastq2="results/trimmed/{sample}_{unit}_R2.fastq.gz",
-        qc="results/trimmed/{sample}_{unit}.paired.qc.txt",
-    log:
-        "logs/cutadapt/{sample}_{unit}.log",
-    params:
-        extra=config["params"]["cutadapt-pe"],
-        adapters=lambda w: str(units.loc[w.sample].loc[w.unit, "adapters"]),
-    threads: 8
-    wrapper:
-        "v3.5.3/bio/cutadapt/pe"
+        mv {prefix}_1_val_1.fq.gz {output.fastq1}
+        mv {prefix}_2_val_2.fq.gz {output.fastq2}
 
+        # Move the FastQC report to the expected output locations
+        mv {prefix}_1_fastqc.html {output.html}
+        mv {prefix}_1_fastqc.zip {output.zip}
 
-rule cutadapt_se:
-    input:
-        get_cutadapt_input,
-    output:
-        fastq="results/trimmed/{sample}_{unit}_single.fastq.gz",
-        qc="results/trimmed/{sample}_{unit}_single.qc.txt",
-    log:
-        "logs/cutadapt/{sample}_{unit}.log",
-    params:
-        extra=config["params"]["cutadapt-se"],
-        adapters=lambda w: str(units.loc[w.sample].loc[w.unit, "adapters"]),
-    threads: 8
-    wrapper:
-        "v3.5.3/bio/cutadapt/se"
+        echo "trim_galore:
+            trimgalore: $(echo $(trim_galore --version 2>&1) | sed 's/^.*version //; s/Last.*\$//')
+            cutadapt: $(cutadapt --version)" > {output.versions}
+        """
